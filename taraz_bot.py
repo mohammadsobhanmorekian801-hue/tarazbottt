@@ -31,6 +31,7 @@ from pathlib import Path
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -48,6 +49,7 @@ with open(DATA_PATH, "r", encoding="utf-8") as f:
     DATA = json.load(f)
 
 USERS_PATH = Path(__file__).parent / "users.json"
+CONTACT_MAP_PATH = Path(__file__).parent / "contact_map.json"
 
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0") or "0")
 
@@ -162,6 +164,27 @@ def register_user(update: Update):
     if uid not in users:
         users.add(uid)
         save_users(users)
+
+
+def load_contact_map() -> dict:
+    """نگاشت شناسه‌ی پیامی که برای ادمین فوروارد شده -> شناسه‌ی چت کاربر اصلی.
+    این باعث می‌شه وقتی ادمین روی پیام فوروارد‌شده Reply می‌زنه، بدونیم جوابش
+    باید برای کدوم کاربر برگرده."""
+    if not CONTACT_MAP_PATH.exists():
+        return {}
+    try:
+        with open(CONTACT_MAP_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_contact_map(mapping: dict):
+    try:
+        with open(CONTACT_MAP_PATH, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, ensure_ascii=False)
+    except OSError as e:
+        logger.warning("Could not save contact_map.json: %s", e)
 
 
 def parse_number(token: str):
@@ -540,7 +563,12 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"متن پیام:\n{text}"
     )
     try:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text)
+        sent = await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text)
+        # این نگاشت رو ذخیره می‌کنیم تا اگه ادمین روی همین پیام Reply بزنه،
+        # بدونیم جوابش باید برای همین کاربر برگرده.
+        mapping = load_contact_map()
+        mapping[str(sent.message_id)] = user.id
+        save_contact_map(mapping)
         await update.message.reply_text(
             "✅ پیامت برای پشتیبانی ارسال شد.", reply_markup=main_menu_keyboard()
         )
@@ -551,6 +579,37 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=main_menu_keyboard(),
         )
     return MAIN_MENU
+
+
+async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """وقتی ادمین روی پیام فوروارد‌شده‌ی یه کاربر Reply می‌زنه، جوابش رو مستقیم
+    برای همون کاربر می‌فرستیم. اگه پیام مربوط به این قابلیت نبود، کاری نمی‌کنیم
+    و می‌ذاریم بقیه‌ی handler ها طبق روال عادی پیام رو پردازش کنن."""
+    if not ADMIN_ID or not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    if not update.message or not update.message.reply_to_message:
+        return
+
+    mapping = load_contact_map()
+    target_user_id = mapping.get(str(update.message.reply_to_message.message_id))
+    if target_user_id is None:
+        return  # این یه ریپلای معمولیه، نه جواب به کاربر — کاری نمی‌کنیم
+
+    reply_text = update.message.text or ""
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"📩 پاسخ پشتیبانی:\n\n{reply_text}",
+        )
+        await update.message.reply_text("✅ جوابت برای کاربر ارسال شد.")
+    except Exception as e:
+        logger.warning("Could not deliver admin reply to user: %s", e)
+        await update.message.reply_text(
+            "⚠️ نشد جواب رو بفرستم (شاید کاربر ربات رو بلاک کرده)."
+        )
+
+    # این پیام کاملاً پردازش شد؛ نذار وارد فلوی عادی مکالمه هم بشه.
+    raise ApplicationHandlerStop
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +675,12 @@ def main():
         )
 
     application = Application.builder().token(token).build()
+
+    # این باید قبل از ConversationHandler چک بشه تا اگه ادمین داشت به یه پیام
+    # کاربر Reply می‌زد، مستقیم پردازش بشه و وارد فلوی منو نشه.
+    application.add_handler(
+        MessageHandler(filters.TEXT & filters.REPLY, handle_admin_reply), group=-1
+    )
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
