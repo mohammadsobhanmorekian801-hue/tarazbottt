@@ -246,7 +246,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text(
         "سلام 👋\n"
-        "این ربات تراز تخمینی سوابق تحصیلی و کنکور ۱۴۰۴ (رشته تجربی) رو بر اساس "
+        "این ربات تراز تخمینی سوابق تحصیلی و کنکور ۱۴۰۵ (رشته تجربی) رو بر اساس "
         "جدول واقعی کارنامه‌های ۱۴۰۴ حساب می‌کنه.\n\n"
         "یکی از گزینه‌ها رو انتخاب کن:",
         reply_markup=main_menu_keyboard(),
