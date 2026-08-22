@@ -51,7 +51,22 @@ with open(DATA_PATH, "r", encoding="utf-8") as f:
 USERS_PATH = Path(__file__).parent / "users.json"
 CONTACT_MAP_PATH = Path(__file__).parent / "contact_map.json"
 
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0") or "0")
+
+def _parse_admin_id() -> int:
+    """ADMIN_ID رو از متغیر محیطی می‌خونه؛ اگه خالی یا نامعتبر بود (مثلاً فاصله
+    یا کاراکتر اضافه داشت)، به‌جای کرش کردن کل ربات، صفر برمی‌گردونه و فقط
+    قابلیت‌های ادمین (پشتیبانی/Broadcast) غیرفعال می‌مونن."""
+    raw = (os.environ.get("ADMIN_ID") or "").strip()
+    if not raw:
+        return 0
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("ADMIN_ID نامعتبره (%r)؛ قابلیت‌های ادمین غیرفعال می‌مونن.", raw)
+        return 0
+
+
+ADMIN_ID = _parse_admin_id()
 
 # ---------------------------------------------------------------------------
 # تعریف درس‌ها (دقیقاً مطابق دو شیت اکسل)
@@ -98,9 +113,9 @@ KONKUR_SPECIALIZED_SHARE = 0.40  # سهم دروس تخصصی کنکور
 # بازه‌ی تخمینی حول هر عدد نهایی — «خوش‌بینانه»: سمت پایین بازه رو کمتر و
 # سمت بالا رو بیشتر می‌کشیم، چون کنکور ۱۴۰۴ سخت بوده و درصدهای عمومی پایین‌تر
 # از سال‌های قبل بوده.
-SAWABEGH_MARGIN_PERCENT = 0.025  # ±۲.۵٪ پایه
-KONKUR_MARGIN_PERCENT = 0.035    # ±۳.۵٪ پایه
-FINAL_MARGIN_PERCENT = 0.035     # ±۳.۵٪ پایه
+SAWABEGH_MARGIN_PERCENT = 0.013  # ±۱.۳٪ پایه
+KONKUR_MARGIN_PERCENT = 0.018    # ±۱.۸٪ پایه
+FINAL_MARGIN_PERCENT = 0.018     # ±۱.۸٪ پایه
 OPTIMISM_SKEW = 0.4              # هرچه بیشتر، بازه بیشتر به سمت بالا کشیده می‌شه
 
 # فارسی/عربی -> ارقام لاتین، برای اینکه هرجور کاربر عدد را تایپ کند بخوانیم
